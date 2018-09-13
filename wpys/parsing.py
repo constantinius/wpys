@@ -22,6 +22,15 @@ class GetCapabilitiesRequest(Request):
     request: ClassVar = "GetCapabilities"
     sections: List[str] = None
 
+    @classmethod
+    def from_node(cls, root):
+        # TODO
+        pass
+
+    @classmethod
+    def from_kvp(cls, kvp):
+        return cls(sections=kvp.get('sections', 'ALL').split(','))
+
 
 @dataclass(frozen=True)
 class DescribeProcessRequest(Request):
@@ -210,10 +219,11 @@ def parse_kvp_request(kvp: dict):
         if kvp['service'].upper() != "WPS":
             raise Exception(f"Invalid service {kvp['service']}")
 
-        if kvp['version'] != "2.0.0":
+        cls = REQUEST_CLASSES[kvp['request'].upper()]
+
+        if cls is not GetCapabilitiesRequest and kvp['version'] not in ("2.0", "2.0.0"):
             raise Exception(f"Invalid version {kvp['version']}")
 
-        cls = REQUEST_CLASSES[kvp['request'].upper()]
         if not cls:
             raise Exception(f"Invalid request {kvp['request']}")
     except KeyError as e:

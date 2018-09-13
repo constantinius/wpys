@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from typing import List, Tuple, Callable, Union, Any, ClassVar
 from datetime import datetime
-from traceback import format_tb
+from traceback import format_tb, format_exception
+from functools import partial
 
 from lxml import etree
 from lxml.builder import ElementMaker
 
 from .process import LiteralData, ComplexData, BoundingBoxData
+from .config import WPySConfig
 
 
 class BetterElementMaker(ElementMaker):
@@ -67,12 +69,12 @@ class Operation:
         )
 
 DEFAULT_OPERATIONS = (
-    Operation(name="GetCapabilities", url="."),
-    Operation(name="DescribeProcess", url="."),
-    Operation(name="Execute", url=".", get_enabled=False),
-    Operation(name="GetStatus", url="."),
-    Operation(name="GetResult", url="."),
-    Operation(name="Dismiss", url=".")
+    partial(Operation, name="GetCapabilities"),
+    partial(Operation, name="DescribeProcess"),
+    partial(Operation, name="Execute", get_enabled=False),
+    partial(Operation, name="GetStatus"),
+    partial(Operation, name="GetResult"),
+    partial(Operation, name="Dismiss"),
 )
 
 @dataclass
@@ -87,6 +89,8 @@ class Capabilities(Response):
     provider_site: str = None
     individual_name: str = None
     electronical_mail_address: str = None
+
+    service_endpoint: str = '.'
 
     processes: List[Any] = ()
     operations: List[Operation] = DEFAULT_OPERATIONS
@@ -126,17 +130,17 @@ class Capabilities(Response):
                 ),
             ),
             OWS("OperationsMetadata", *[
-                operation.encode_tree()
+                operation(url=self.service_endpoint).encode_tree()
                 for operation in self.operations
             ]),
             WPS("Contents", *[
                 WPS("Process",
                     OWS("Title", process.metadata.title) if process.metadata.title else None,
-                    OWS("Abstract", process.metadata.abstract),
+                    OWS("Abstract", process.metadata.abstract) if process.metadata.abstract else None,
                     OWS("Keywords", *[
                         OWS("Keyword", keyword)
                         for keyword in process.metadata.keywords or []
-                    ]),
+                    ]) if process.metadata.keywords else None,
                     OWS("Identifier", process.identifier), *[
                         OWS("Metadata", reference)
                         for reference in process.metadata.references or []
@@ -228,7 +232,6 @@ class ProcessOfferings:
             ]
         )
 
-
     def encode_tree(self):
         return WPS("ProcessOfferings", *[
             WPS("ProcessOffering", 
@@ -269,14 +272,14 @@ class StatusInfo:
 
     @classmethod
     def from_job(cls, job):
-        info = job.get_status_info()
+        # info = job.get_status_info()
         return cls(
             job_id=job.identifier,
             status=str(job.status),
-            next_poll=info.next_poll,
-            estimated_completion=info.estimated_completion,
-            percent_completed=info.percent_completed,
-            traceback=job.error.__traceback__ if job.error else None
+            next_poll=job.next_poll,
+            estimated_completion=job.estimated_completion,
+            percent_completed=job.percent_completed,
+            # traceback=job.error.__traceback__ if job.error else None
         )
 
     def encode_tree(self):
@@ -295,12 +298,59 @@ class StatusInfo:
             WPS(
                 "PercentCompleted", str(self.percent_completed)
             ) if self.percent_completed is not None else None,
-            etree.Comment(
-                "\n".join(format_tb(self.traceback))
-            ) if self.traceback else None
+            # etree.Comment(
+            #     "\n".join(format_tb(self.traceback))
+            # ) if self.traceback else None
         )
 
-def encode_response(response: Response):
+@dataclass
+class Result:
+
+    @classmethod
+    def from_job(cls, job):
+        pass
+
+    def encode_tree(self):
+        pass
+
+@dataclass
+class ExceptionReport:
+    exceptions: List[Exception]
+    debug: bool = False
+
+    @classmethod
+    def from_job(cls, job, config=None):
+        pass
+
+    @classmethod
+    def from_exception(cls, exc, config=None):
+        debug = config.debug if config and config.debug else False
+        return cls(exceptions=[exc], debug=debug)
+
+    def encode_exception(self, exception):
+        locator = None
+        traceback = None
+        if self.debug:
+            locator = format_tb(exception.__traceback__)[-2]
+            traceback = etree.Comment(
+                '\n' + '\n'.join(format_exception(
+                    type(exception), exception, exception.__traceback__
+                ))
+            )
+        return OWS("Exception",
+            OWS("ExceptionText", str(exception)),
+            traceback,
+            exceptionCode=type(exception).__name__,
+            locator=locator,
+        )
+
+    def encode_tree(self):
+        return OWS("ExceptionReport", *[
+            self.encode_exception(exception)
+            for exception in self.exceptions
+        ])
+
+def encode_response(response: Response, config: WPySConfig):
     return etree.tostring(
-        response.encode_tree(), pretty_print=True
+        response.encode_tree(), pretty_print=config.pretty_print
     )

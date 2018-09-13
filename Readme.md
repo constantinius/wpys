@@ -8,6 +8,7 @@ Requires Python 3.7 (maybe lower, if you install `dataclasses` separetely)
 
 ## Installation
 
+
 ```bash
 pip install quart
 ```
@@ -15,5 +16,9 @@ pip install quart
 ## Running
 
 ```bash
-QUART_APP=wpys.server:app quart run
+# run the server
+WPYS_CONFIG_FILE=wpys_examples/config.yaml QUART_APP=wpys.server:app quart run
+
+# run the worker
+WPYS_CONFIG_FILE=wpys_examples/config.yaml python3 -m wpys.worker
 ```

@@ -89,7 +89,7 @@ def process(fn=None, *, identifier=None, inputs=None, outputs=None, allow_async=
     elif not metadata:
         metadata = Metadata()
 
-    return ProcessWrapper(
+    wrapper = ProcessWrapper(
         fn=fn,
         identifier=identifier or fn.__name__,
         inputs=inputs,
@@ -98,6 +98,9 @@ def process(fn=None, *, identifier=None, inputs=None, outputs=None, allow_async=
         allow_sync=allow_sync,
         metadata=metadata
     )
+
+    fn.__process_wrapper__ = wrapper
+    return fn
 
 
 @dataclass
@@ -345,4 +348,3 @@ def example_process3(a: int, b: int) -> int:
 #                 print(job.is_interrupted)
 
 # main()
-

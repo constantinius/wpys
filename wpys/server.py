@@ -1,61 +1,46 @@
 from datetime import datetime, timedelta
+import asyncio
 
 from quart import Quart, request
 
 from .parsing import parse_xml_request, parse_kvp_request
 from .dispatch import dispatch
-from .registry import ProcessRegistry
-from .process import process
-from .job import JobManager, Status, Result
+from .config import load_config
+from .registry import load_process_registry
+from .broker import get_broker
+from .backend import get_result_backend
 
 app = Quart(__name__)
+config = load_config()
 
 
-import time
-
-
-@process(
-    outputs=[{
-        "identifier": "distance",
-        "domains": [{
-            "uom": "meter",
-            "data_type": "http://www.w3.org/2001/XMLSchema#double",
-        }, {
-            "uom": "feet",
-            "data_type": "http://www.w3.org/2001/XMLSchema#double",
-            "to_default_domain": lambda v: v * 0.3048
-        }],
-        "formats": [
-            {"mimetype": "text/plain"},
-            {"mimetype": "text/xml"},
-        ]
-    }]
-)
-def long_running_process(sleep_time: int=5) -> int:
-    """ This is a long, long, loooong running process. In fact you can choose how long.
-    """
-    time.sleep(sleep_time / 3)
-    yield Status(percent_completed=33, next_poll=timedelta(seconds=sleep_time / 3), estimated_completion=timedelta(seconds=sleep_time / 3 * 2))
-    time.sleep(sleep_time / 3)
-    yield Status(percent_completed=66, next_poll=timedelta(seconds=sleep_time / 3), estimated_completion=timedelta(seconds=sleep_time / 3))
-    time.sleep(sleep_time / 3)
-    yield Status(percent_completed=100)
-    yield Result(42)
-
-    raise Exception("Lolol")
-
-process_registry = ProcessRegistry()
-process_registry.register(long_running_process)
-
-job_manager = JobManager()
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route(config.main_endpoint_name, methods=['GET', 'POST'])
 async def endpoint():
     if request.method == 'GET':
         wps_request = parse_kvp_request(request.args)
     elif request.method == 'POST':
-        data = await request.get_data()
-        wps_request = parse_xml_request(data.decode('utf-8'))
+        data = bytes(await request.get_data())
+        print(type(data))
+        wps_request = parse_xml_request(data)
 
-    result = await dispatch(process_registry, job_manager, wps_request)
+    broker = await get_broker(config, asyncio.get_event_loop())
+    process_registry = load_process_registry(config)
+
+    result = await dispatch(process_registry, broker, config, wps_request)
     return result
+
+
+@app.route(config.result_endpoint_name, methods=['GET'])
+async def result_endpoint(job_id, result_name):
+    result_backend = get_result_backend(config)
+    raw_result = await result_backend.get_job_result(job_id, result_name)
+
+    async def raw_result_iterator(raw_result):
+        while True:
+            chunk = await raw_result.read(config)
+            if not chunk:
+                break
+            yield chunk
+
+    return raw_result_iterator(raw_result)
+

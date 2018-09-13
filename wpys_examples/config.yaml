@@ -1,0 +1,28 @@
+main_endpoint_name: '/wps'
+debug: true
+process_config:
+  locations:
+    - wpys_examples.example:long_running_process
+logging:
+  version: 1
+  formatters:
+    brief:
+      level: DEBUG
+      format: '%(levelname)s - %(name)s: %(message)s'
+      # format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: brief
+      level: DEBUG
+      stream: ext://sys.stderr
+  # root:
+  #   level: DEBUG
+  #   handlers: [console]
+  loggers:
+    wpys:
+      level: DEBUG
+      handlers: [console]
+    __main__:
+      level: DEBUG
+      handlers: [console]
